@@ -1,6 +1,8 @@
 package com.azarastrong.app
 
+import android.net.Uri
 import android.speech.tts.TextToSpeech
+import android.widget.VideoView
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -19,6 +21,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
+import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -99,11 +102,14 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
 
 @Composable
 private fun ExerciseAnimation(move:Move,running:Boolean){
+ val video=exerciseVideo(move)
  val transition=rememberInfiniteTransition(label="exercise")
  val phase by transition.animateFloat(0f,1f,infiniteRepeatable(tween(if(running)1200 else 100000),RepeatMode.Reverse),label="motion")
  val realistic=realisticExerciseImage(move)
  Card(Modifier.fillMaxWidth().height(235.dp),colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(22.dp)){
-  if(realistic!=null){
+  if(video!=null){
+   ExerciseVideo(video,running)
+  }else if(realistic!=null){
    Box(Modifier.fillMaxSize()){
     Image(painterResource(realistic),move.name,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
     Row(Modifier.align(Alignment.BottomCenter).padding(9.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
@@ -113,6 +119,32 @@ private fun ExerciseAnimation(move:Move,running:Boolean){
    }
   }else Canvas(Modifier.fillMaxSize().padding(16.dp)){drawPerson(move,phase)}
  }
+}
+
+@Composable
+private fun ExerciseVideo(resourceId:Int,running:Boolean){
+ val context=androidx.compose.ui.platform.LocalContext.current
+ val videoView=remember(resourceId){
+  VideoView(context).apply{
+   setBackgroundColor(android.graphics.Color.BLACK)
+   setVideoURI(Uri.parse("android.resource://${context.packageName}/$resourceId"))
+   setOnPreparedListener{player->
+    player.isLooping=true
+    player.setVolume(0f,0f)
+   }
+  }
+ }
+ AndroidView(
+  factory={videoView},
+  modifier=Modifier.fillMaxSize(),
+  update={view->if(running){if(!view.isPlaying)view.start()}else if(view.isPlaying)view.pause()}
+ )
+ DisposableEffect(videoView){onDispose{videoView.stopPlayback()}}
+}
+
+private fun exerciseVideo(move:Move):Int?=when(move.name){
+ "March + arm sweep"->R.raw.exercise_march_arm_sweep
+ else->null
 }
 
 @Composable private fun MotionLabel(text:String,active:Boolean){
