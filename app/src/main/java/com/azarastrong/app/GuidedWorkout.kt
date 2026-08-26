@@ -144,6 +144,7 @@ private fun ExerciseVideo(resourceId:Int,running:Boolean){
 
 private fun exerciseVideo(move:Move):Int?=when(move.name){
  "March + arm sweep"->R.raw.exercise_march_arm_sweep
+ "Band pull-apart"->R.raw.exercise_band_pull_apart
  else->null
 }
 
