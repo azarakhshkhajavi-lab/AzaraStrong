@@ -13,6 +13,8 @@ import androidx.compose.ui.*
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -99,7 +101,34 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
 private fun ExerciseAnimation(move:Move,running:Boolean){
  val transition=rememberInfiniteTransition(label="exercise")
  val phase by transition.animateFloat(0f,1f,infiniteRepeatable(tween(if(running)1200 else 100000),RepeatMode.Reverse),label="motion")
- Card(Modifier.fillMaxWidth().height(215.dp),colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(22.dp)){Canvas(Modifier.fillMaxSize().padding(16.dp)){drawPerson(move,phase)}}
+ val realistic=realisticExerciseImage(move)
+ Card(Modifier.fillMaxWidth().height(235.dp),colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(22.dp)){
+  if(realistic!=null){
+   Box(Modifier.fillMaxSize()){
+    Image(painterResource(realistic),move.name,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
+    Row(Modifier.align(Alignment.BottomCenter).padding(9.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
+     MotionLabel("START",phase<.5f)
+     MotionLabel("FINISH",phase>=.5f)
+    }
+   }
+  }else Canvas(Modifier.fillMaxSize().padding(16.dp)){drawPerson(move,phase)}
+ }
+}
+
+@Composable private fun MotionLabel(text:String,active:Boolean){
+ Surface(color=if(active)Coral else Ink.copy(alpha=.70f),shape=CircleShape){
+  Text(text,Modifier.padding(horizontal=13.dp,vertical=6.dp),color=Color.White,fontSize=11.sp,fontWeight=FontWeight.Black)
+ }
+}
+
+private fun realisticExerciseImage(move:Move):Int?=when(move.name){
+ "March + arm sweep"->R.drawable.exercise_march_arm_sweep
+ "Band pull-apart"->R.drawable.exercise_band_pull_apart
+ "One-arm dumbbell row"->R.drawable.exercise_one_arm_row
+ "Wall slides"->R.drawable.exercise_wall_slide
+ "Standing Pallof press"->R.drawable.exercise_pallof_press
+ "Suitcase march"->R.drawable.exercise_suitcase_march
+ else->null
 }
 
 private fun DrawScope.drawPerson(move:Move,phase:Float){
