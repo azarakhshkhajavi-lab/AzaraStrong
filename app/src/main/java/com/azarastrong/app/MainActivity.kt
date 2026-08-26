@@ -30,7 +30,20 @@ private val sessions=listOf(
 private val Ink=Color(0xFF18333A);private val Teal=Color(0xFF0E6E70);private val Paper=Color(0xFFF7F3EC);private val Coral=Color(0xFFE4745B);private val Mint=Color(0xFFDCEEE8)
 
 class MainActivity:ComponentActivity(){override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{AzaraTheme{WorkoutApp()}}}}
-@Composable fun AzaraTheme(content:@Composable()->Unit)=MaterialTheme(colorScheme=lightColorScheme(primary=Teal,secondary=Coral,background=Paper,surface=Color.White,onBackground=Ink,onSurface=Ink),content=content)
+@Composable
+fun AzaraTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = Teal,
+            secondary = Coral,
+            background = Paper,
+            surface = Color.White,
+            onBackground = Ink,
+            onSurface = Ink
+        ),
+        content = content
+    )
+}
 
 @Composable fun WorkoutApp(){
  val context=androidx.compose.ui.platform.LocalContext.current
