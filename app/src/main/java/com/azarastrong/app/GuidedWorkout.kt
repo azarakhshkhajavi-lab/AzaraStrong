@@ -1,5 +1,6 @@
 package com.azarastrong.app
 
+import android.speech.tts.TextToSpeech
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -17,9 +18,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import kotlinx.coroutines.delay
+import java.util.Locale
 
 @Composable
 fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Unit){
+ val context=androidx.compose.ui.platform.LocalContext.current
+ var voiceReady by remember{mutableStateOf(false)}
+ var voiceOn by remember{mutableStateOf(true)}
+ val voice=remember{TextToSpeech(context){status->voiceReady=status==TextToSpeech.SUCCESS}}
+ DisposableEffect(Unit){onDispose{voice.stop();voice.shutdown()}}
  var index by remember{mutableIntStateOf(0)}
  var count by remember{mutableIntStateOf(0)}
  var running by remember{mutableStateOf(true)}
@@ -28,6 +35,14 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
  val move=session.moves[index]
  val timed=isTimed(move)
  val target=goalFor(move)
+
+ LaunchedEffect(voiceReady){if(voiceReady)voice.language=Locale.US}
+ LaunchedEffect(index,voiceReady,voiceOn){
+  if(voiceReady&&voiceOn)voice.speak("Next exercise. "+move.name+". "+move.cue,TextToSpeech.QUEUE_FLUSH,null,"exercise")
+ }
+ LaunchedEffect(count,voiceReady,voiceOn){
+  if(count>0&&voiceReady&&voiceOn)voice.speak(count.toString(),TextToSpeech.QUEUE_ADD,null,"count")
+ }
 
  LaunchedEffect(Unit){while(totalSeconds>0){delay(1000);totalSeconds--}}
  LaunchedEffect(index){count=0;running=true}
@@ -46,6 +61,7 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
   Row(Modifier.fillMaxWidth().background(Ink).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
    IconButton(onClick=onExit){Icon(Icons.Default.Close,"Exit",tint=Color.White)}
    Column(Modifier.weight(1f)){Text(session.title,color=Color.White,fontWeight=FontWeight.Bold);Text("Exercise "+(index+1)+" of "+session.moves.size,color=Color(0xFFD8E2E1),fontSize=12.sp)}
+   IconButton(onClick={voiceOn=!voiceOn}){Icon(if(voiceOn)Icons.Default.VolumeUp else Icons.Default.VolumeOff,"Voice",tint=Color.White)}
    Text("%02d:%02d".format(totalSeconds/60,totalSeconds%60),color=Color.White,fontWeight=FontWeight.Bold)
   }
  }){padding->
