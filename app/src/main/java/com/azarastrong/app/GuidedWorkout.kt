@@ -124,6 +124,7 @@ private fun ExerciseAnimation(move:Move,running:Boolean){
 @Composable
 private fun ExerciseVideo(resourceId:Int,running:Boolean){
  val context=androidx.compose.ui.platform.LocalContext.current
+ val shouldRun by rememberUpdatedState(running)
  val videoView=remember(resourceId){
   VideoView(context).apply{
    setBackgroundColor(android.graphics.Color.BLACK)
@@ -131,7 +132,9 @@ private fun ExerciseVideo(resourceId:Int,running:Boolean){
    setOnPreparedListener{player->
     player.isLooping=true
     player.setVolume(0f,0f)
+    if(shouldRun)start()
    }
+   setOnCompletionListener{if(shouldRun)start()}
   }
  }
  AndroidView(
