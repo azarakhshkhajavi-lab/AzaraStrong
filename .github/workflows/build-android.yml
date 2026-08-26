@@ -21,8 +21,8 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-      - name: Build APK and release AAB
-        run: gradle :app:assembleDebug :app:bundleRelease
+      - name: Re-encode videos for broad Android compatibility
+        run: |\n          sudo apt-get update\n          sudo apt-get install -y ffmpeg\n          for video in app/src/main/res/raw/exercise_march_arm_sweep.mp4 app/src/main/res/raw/exercise_band_pull_apart.mp4; do\n            ffmpeg -y -i "$video" -an -vf "scale=1280:720:flags=lanczos,format=yuv420p" -c:v libx264 -profile:v baseline -level 3.1 -preset medium -crf 23 -movflags +faststart "${video%.mp4}.compatible.mp4"\n            mv "${video%.mp4}.compatible.mp4" "$video"\n          done\n      - name: Build APK and release AAB\n        run: gradle :app:assembleDebug :app:bundleRelease
       - uses: actions/upload-artifact@v4
         with:
           name: azara-strong-android-builds
