@@ -42,88 +42,151 @@ private val gymSessions=listOf(
  Session("Gym Full Body","A balanced strength session for shape and conditioning",listOf(
   Move("Treadmill warm-up","2 min","Walk tall and let your arms swing.","Warm-up"),Move("Smith machine squat","2 × 10","Use a bench target and keep feet firmly planted.","Glutes"),Move("Dumbbell Romanian deadlift","2 × 10","Push hips back and keep weights close.","Glutes"),Move("Assisted pull-up machine","2 × 8","Drive elbows down and keep chest lifted.","Back"),Move("Cable chest press","2 × 10","Brace your middle and press straight forward.","Chest"),Move("Sled push or incline walk","2 × 40 sec","Stay controlled and stop before form changes.","Conditioning")))
 )
-val Ink=Color(0xFF18333A);val Teal=Color(0xFF0E6E70);val Paper=Color(0xFFF7F3EC);val Coral=Color(0xFFE4745B);val Mint=Color(0xFFDCEEE8)
 
-class MainActivity:ComponentActivity(){override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{AzaraTheme{WorkoutApp()}}}}
-@Composable
-fun AzaraTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Teal,
-            secondary = Coral,
-            background = Paper,
-            surface = Color.White,
-            onBackground = Ink,
-            onSurface = Ink
-        ),
-        content = content
-    )
-}
+val Ink=Color(0xFF123F46)
+val Teal=Color(0xFF087F83)
+val Paper=Color(0xFFFAF7EF)
+val Coral=Color(0xFF99752C)
+val Mint=Color(0xFFDDEFEA)
 
-@Composable fun WorkoutApp(){
- val context=androidx.compose.ui.platform.LocalContext.current
- val prefs=remember{context.getSharedPreferences("progress",Context.MODE_PRIVATE)}
- var guided by remember { mutableStateOf(false) }
- var mode by remember{mutableStateOf(prefs.getString("mode","home")?:"home")}
- val sessions=if(mode=="home")homeSessions else gymSessions
- val startDates=remember{mutableStateMapOf<String,String>().apply{listOf("home","gym").forEach{m->homeSessions.indices.forEach{i->prefs.getString("date-"+m+"-"+i,null)?.let{d->put(m+"-"+i,d)}}}}}
- var day by remember{mutableIntStateOf(0)};var seconds by remember{mutableIntStateOf(1200)};var running by remember{mutableStateOf(false)};var streak by remember{mutableIntStateOf(prefs.getInt("streak",0))}
- val completed=remember{mutableStateMapOf<String,Boolean>().apply{listOf("home" to homeSessions,"gym" to gymSessions).forEach{pair->pair.second.indices.forEach{d->pair.second[d].moves.indices.forEach{i->val k=pair.first+"-"+d+"-"+i;if(prefs.getBoolean(k,false))put(k,true)}}}}}
- LaunchedEffect(running,seconds){if(running&&seconds>0){delay(1000);seconds--}else if(seconds==0)running=false}
- val session=sessions[day]
- if (guided) {
-  GuidedWorkoutScreen(
-   session = session,
-   onExit = { guided = false },
-   onMoveComplete = { index ->
-    val key = mode+"-"+day+"-"+index
-    completed[key] = true
-    prefs.edit().putBoolean(key,true).apply()
+@Composable fun TermehBorder(){
+ Canvas(Modifier.fillMaxWidth().height(26.dp)){
+  val spacing=32.dp.toPx()
+  for(i in 0..(size.width/spacing).toInt()){
+   val x=i*spacing;val y=size.height/2
+   val p=androidx.compose.ui.graphics.Path().apply{
+    moveTo(x,y+8.dp.toPx())
+    cubicTo(x-12.dp.toPx(),y,x-2.dp.toPx(),y-13.dp.toPx(),x+9.dp.toPx(),y-9.dp.toPx())
+    cubicTo(x+1.dp.toPx(),y-8.dp.toPx(),x+13.dp.toPx(),y+8.dp.toPx(),x,y+8.dp.toPx())
+    close()
    }
-  )
-  return
- }
- Scaffold(bottomBar={NavigationBar(containerColor=Color.White){NavigationBarItem(true,{},icon={Icon(Icons.Default.PlayArrow,null)},label={Text("Workout")});NavigationBarItem(false,{},icon={Icon(Icons.Default.Info,null)},label={Text("Guide")})}}){pad->
-  Column(Modifier.fillMaxSize().background(Paper).padding(pad).verticalScroll(rememberScrollState())){
-   Box(Modifier.fillMaxWidth().background(Ink).padding(24.dp)){Column{Text("AZARA STRONG",color=Color(0xFFF2B69D),fontWeight=FontWeight.Bold,letterSpacing=2.sp);Spacer(Modifier.height(12.dp));Text("Stand taller.\nFeel stronger.",color=Color.White,fontSize=38.sp,lineHeight=42.sp,fontWeight=FontWeight.SemiBold);Spacer(Modifier.height(12.dp));Text("Four personalized days · Home or Gym · Guided voice",color=Color(0xFFD8E2E1),fontSize=14.sp)}}
-   Column(Modifier.padding(16.dp)){
-    Card(colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(16.dp)){Column(Modifier.padding(18.dp)){Text("Your goal, honestly",color=Teal,fontWeight=FontWeight.Bold,fontSize=19.sp);Spacer(Modifier.height(6.dp));Text("Core training makes your middle stronger, but belly fat changes through consistent full-body movement, nutrition, sleep and time.",lineHeight=21.sp)}}
-    Spacer(Modifier.height(16.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-     FilterChip(selected=mode=="home",onClick={mode="home";day=0;guided=false;prefs.edit().putString("mode",mode).apply()},label={Text("Home workouts")},modifier=Modifier.weight(1f))
-     FilterChip(selected=mode=="gym",onClick={mode="gym";day=0;guided=false;prefs.edit().putString("mode",mode).apply()},label={Text("Gym workouts")},modifier=Modifier.weight(1f))
-    }
-    Spacer(Modifier.height(24.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("THIS WEEK",color=Coral,fontWeight=FontWeight.Bold,fontSize=12.sp);Text("Your sessions",fontSize=28.sp,fontWeight=FontWeight.Bold)};Surface(shape=CircleShape,color=Color.White){Text("Streak  "+streak,Modifier.padding(horizontal=14.dp,vertical=9.dp),fontWeight=FontWeight.Bold)}}
-    Spacer(Modifier.height(14.dp));ScrollableTabRow(day,containerColor=Color.Transparent,edgePadding=0.dp,indicator={}){sessions.forEachIndexed{i,s->FilterChip(day==i,{day=i;seconds=1200;running=false},label={Text("Day "+(i+1)+" · "+s.title)},modifier=Modifier.padding(end=8.dp))}}
-    Spacer(Modifier.height(12.dp));Card(colors=CardDefaults.cardColors(containerColor=Color.White),shape=RoundedCornerShape(18.dp)){Column(Modifier.padding(18.dp)){
-     Text(session.focus,color=Color.Gray,fontSize=13.sp);Text(session.title,fontSize=27.sp,fontWeight=FontWeight.Bold)
-     val dateKey=mode+"-"+day
-     startDates[dateKey]?.let{Text("Started "+it,color=Coral,fontWeight=FontWeight.Bold,fontSize=13.sp)}
-     Spacer(Modifier.height(12.dp))
-     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("%02d:%02d".format(seconds/60,seconds%60),fontSize=34.sp,fontWeight=FontWeight.Black);Button(onClick={if(seconds==0)seconds=1200 else running=!running}){Text(if(seconds==0)"Reset" else if(running)"Pause" else "Start timer")}}
-     Spacer(Modifier.height(10.dp));LinearProgressIndicator(progress={session.moves.indices.count{i->completed[mode+"-"+day+"-"+i]==true}.toFloat()/session.moves.size},modifier=Modifier.fillMaxWidth(),color=Teal);Spacer(Modifier.height(14.dp))
-     session.moves.forEachIndexed{i,m->val k=mode+"-"+day+"-"+i;MoveRow(m,i,completed[k]==true){val v=completed[k]!=true;completed[k]=v;prefs.edit().putBoolean(k,v).apply()}}
-     Button(onClick={
-      val key=mode+"-"+day
-      if(startDates[key]==null){val d=SimpleDateFormat("MMMM d, yyyy",Locale.getDefault()).format(Date());startDates[key]=d;prefs.edit().putString("date-"+key,d).apply()}
-      guided=true
-     },modifier=Modifier.fillMaxWidth().padding(top=10.dp)){Icon(Icons.Default.PlayArrow,null);Spacer(Modifier.width(8.dp));Text(if(startDates[mode+"-"+day]==null)"Start guided workout" else "Continue guided workout")}
-     OutlinedButton(onClick={session.moves.indices.forEach{i->val k=mode+"-"+day+"-"+i;completed[k]=true;prefs.edit().putBoolean(k,true).apply()}},modifier=Modifier.fillMaxWidth().padding(top=6.dp)){Icon(Icons.Default.Check,null);Spacer(Modifier.width(8.dp));Text("Mark session complete")}
-    }}
-    Spacer(Modifier.height(22.dp));Text("Movement beyond the mat",fontSize=26.sp,fontWeight=FontWeight.Bold);Text("Add a 10-minute easy walk after lunch and dinner on 5 days each week. Gentle walking is usually more comfortable than vigorous activity after eating.",color=Color.DarkGray,lineHeight=21.sp)
-    OutlinedButton(onClick={streak++;prefs.edit().putInt("streak",streak).apply()},modifier=Modifier.fillMaxWidth().padding(vertical=8.dp)){Text("Mark this week complete")}
-    GuideCard("For straighter shoulders","Think “collarbones wide,” not shoulders forced back. Rows, pull-aparts and face pulls make upright posture easier.")
-    GuideCard("For frequent heartburn","Train before eating or wait about 2–3 hours after a larger meal. Choose standing core work when symptoms are active.")
-    GuideCard("How heavy?","The final two repetitions should feel challenging while your form stays clean. Add resistance only when every set feels easy.")
-    Text("Educational fitness guidance—not a medical diagnosis. Stop for chest pain, faintness, unusual breathlessness or sharp pain.",Modifier.padding(10.dp),fontSize=12.sp,color=Color.Gray,fontStyle=FontStyle.Italic)
-   }
+   drawPath(p,Teal.copy(alpha=0.28f),style=androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+   drawCircle(Coral.copy(alpha=0.5f),1.3.dp.toPx(),androidx.compose.ui.geometry.Offset(x,y))
   }
  }
 }
 
-@Composable fun MoveRow(move:Move,index:Int,checked:Boolean,onToggle:()->Unit){
- Surface(Modifier.fillMaxWidth().padding(vertical=4.dp).clickable{onToggle()},shape=RoundedCornerShape(12.dp),color=if(checked)Mint else Color(0xFFFBFAF7)){Row(Modifier.padding(12.dp),verticalAlignment=Alignment.CenterVertically){
-  Surface(shape=CircleShape,color=if(checked)Teal else Color.Transparent,border=if(checked)null else BorderStroke(1.dp,Color.LightGray),modifier=Modifier.size(36.dp)){Box(contentAlignment=Alignment.Center){if(checked)Icon(Icons.Default.Check,null,tint=Color.White)else Text((index+1).toString(),fontWeight=FontWeight.Bold)}}
-  Column(Modifier.padding(horizontal=12.dp).weight(1f)){Text(move.kind.uppercase(),color=Coral,fontSize=10.sp,fontWeight=FontWeight.Bold);Text(move.name,fontWeight=FontWeight.Bold);Text(move.cue,color=Color.Gray,fontSize=12.sp,lineHeight=16.sp)};Text(move.detail,fontWeight=FontWeight.Bold,fontSize=12.sp)
- }}
+class MainActivity:ComponentActivity(){
+ override fun onCreate(savedInstanceState:Bundle?){
+  super.onCreate(savedInstanceState)
+  setContent{AzaraTheme{WorkoutApp()}}
+ }
 }
-@Composable fun GuideCard(title:String,body:String){Card(Modifier.fillMaxWidth().padding(vertical=6.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){Column(Modifier.padding(16.dp)){Text(title,fontWeight=FontWeight.Bold,fontSize=18.sp);Spacer(Modifier.height(4.dp));Text(body,color=Color.DarkGray,lineHeight=20.sp)}}}
+@Composable fun AzaraTheme(content:@Composable ()->Unit){
+ MaterialTheme(colorScheme=lightColorScheme(primary=Teal,secondary=Coral,background=Paper,surface=Color.White,onBackground=Ink,onSurface=Ink),content=content)
+}
+@Composable fun WorkoutApp(){
+ val context=androidx.compose.ui.platform.LocalContext.current
+ val prefs=remember{context.getSharedPreferences("progress",Context.MODE_PRIVATE)}
+ var mode by remember{mutableStateOf(prefs.getString("mode","home")?:"home")}
+ var selectedDay by remember{mutableStateOf<Int?>(null)}
+ var guided by remember{mutableStateOf(false)}
+ val sessions=if(mode=="home")homeSessions else gymSessions
+ val dates=remember{mutableStateMapOf<String,String>().apply{
+  listOf("home","gym").forEach{m->(0..3).forEach{d->prefs.getString("date-"+m+"-"+d,null)?.let{put(m+"-"+d,it)}}}
+ }}
+ val completed=remember{mutableStateMapOf<String,Boolean>().apply{
+  listOf("home","gym").forEach{m->(0..3).forEach{d->(0..5).forEach{i->val k=m+"-"+d+"-"+i;if(prefs.getBoolean(k,false))put(k,true)}}}
+ }}
+ if(guided&&selectedDay!=null){
+  val d=selectedDay!!
+  GuidedWorkoutScreen(sessions[d],onExit={guided=false},onMoveComplete={i->
+   val k=mode+"-"+d+"-"+i;completed[k]=true;prefs.edit().putBoolean(k,true).apply()
+  })
+  return
+ }
+ androidx.activity.compose.BackHandler(selectedDay!=null){selectedDay=null}
+ val d=selectedDay
+ Scaffold(containerColor=Paper,bottomBar={
+  if(d!=null)Surface(color=Paper,shadowElevation=8.dp){
+   Button(onClick={
+    val k=mode+"-"+d
+    if(dates[k]==null){
+     val stamp=SimpleDateFormat("MMM d, yyyy",Locale.getDefault()).format(Date())
+     dates[k]=stamp;prefs.edit().putString("date-"+k,stamp).apply()
+    }
+    guided=true
+   },modifier=Modifier.navigationBarsPadding().padding(horizontal=24.dp,vertical=14.dp).fillMaxWidth().height(58.dp),shape=RoundedCornerShape(20.dp)){
+    Icon(Icons.Default.PlayArrow,null);Spacer(Modifier.width(10.dp));Text("Start workout",fontSize=18.sp,fontWeight=FontWeight.Bold)
+   }
+  }
+ }){padding->
+  Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal=24.dp).padding(top=20.dp,bottom=24.dp)){
+   if(d==null){
+    Row(verticalAlignment=Alignment.CenterVertically){
+     Surface(shape=RoundedCornerShape(20.dp),color=Ink,modifier=Modifier.size(54.dp)){
+      Image(androidx.compose.ui.res.painterResource(R.drawable.brand_woman),"Azara",Modifier.padding(3.dp))
+     }
+     Column(Modifier.padding(start=12.dp)){
+      Text("AZARA",fontSize=20.sp,letterSpacing=3.sp,fontWeight=FontWeight.Bold)
+      Text("Strength with care",fontSize=12.sp,color=Teal)
+     }
+    }
+    Spacer(Modifier.height(16.dp))
+    TermehBorder()
+    Spacer(Modifier.height(16.dp))
+    Text("Your time.\nYour strength.",fontSize=38.sp,lineHeight=43.sp,fontWeight=FontWeight.Bold,color=Ink)
+    Spacer(Modifier.height(10.dp))
+    Text("Choose your space. Choose your day.",color=Teal,fontSize=15.sp)
+    Spacer(Modifier.height(22.dp))
+    Row(Modifier.fillMaxWidth().background(Mint,RoundedCornerShape(18.dp)).padding(5.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+     listOf("home" to "Home","gym" to "Gym").forEach{(value,label)->
+      Surface(onClick={mode=value;prefs.edit().putString("mode",value).apply()},color=if(mode==value)Ink else Color.Transparent,shape=RoundedCornerShape(14.dp),modifier=Modifier.weight(1f)){
+       Text(label,Modifier.padding(14.dp),color=if(mode==value)Color.White else Ink,fontWeight=FontWeight.Bold,textAlign=androidx.compose.ui.text.style.TextAlign.Center)
+      }
+     }
+    }
+    Spacer(Modifier.height(26.dp))
+    Text("YOUR FOUR DAYS",fontSize=11.sp,letterSpacing=2.sp,color=Teal,fontWeight=FontWeight.Bold)
+    Spacer(Modifier.height(12.dp))
+    sessions.forEachIndexed{i,s->
+     val done=s.moves.indices.count{completed[mode+"-"+i+"-"+it]==true}
+     Surface(onClick={selectedDay=i},color=if(i==0)Ink else Color.White,shape=RoundedCornerShape(24.dp),modifier=Modifier.fillMaxWidth().padding(bottom=12.dp)){
+      Row(Modifier.padding(20.dp),verticalAlignment=Alignment.CenterVertically){
+       Column(Modifier.width(66.dp)){
+        Text("DAY",fontSize=11.sp,letterSpacing=1.sp,color=if(i==0)Mint else Teal,fontWeight=FontWeight.Bold)
+        Text((i+1).toString().padStart(2,'0'),fontSize=42.sp,fontWeight=FontWeight.Bold,color=if(i==0)Color.White else Ink)
+       }
+       Column(Modifier.weight(1f).padding(horizontal=10.dp)){
+        Text(s.title.removePrefix("Gym "),fontSize=20.sp,lineHeight=24.sp,fontWeight=FontWeight.Bold,color=if(i==0)Color.White else Ink)
+        Spacer(Modifier.height(7.dp))
+        Text(s.moves.size.toString()+" exercises · "+done+" completed",fontSize=12.sp,color=if(i==0)Mint else Teal)
+        dates[mode+"-"+i]?.let{Text("First started "+it,fontSize=11.sp,color=if(i==0)Mint else Teal)}
+       }
+       Icon(Icons.Default.ChevronRight,"Open day "+(i+1),tint=Coral)
+      }
+     }
+    }
+    Spacer(Modifier.height(12.dp))
+    Text("Small steps. Stronger every week.",fontSize=15.sp,fontWeight=FontWeight.Medium)
+    Spacer(Modifier.height(8.dp))
+    Text("For heartburn, avoid exercise soon after a large meal. Stop if a movement causes pain.",fontSize=12.sp,lineHeight=18.sp,color=Teal)
+   }else{
+    TextButton(onClick={selectedDay=null},contentPadding=PaddingValues(0.dp)){
+     Icon(Icons.Default.ArrowBack,null);Spacer(Modifier.width(8.dp));Text("All days")
+    }
+    Spacer(Modifier.height(18.dp))
+    Text(mode.uppercase()+" · DAY "+(d+1),fontSize=12.sp,letterSpacing=2.sp,color=Teal,fontWeight=FontWeight.Bold)
+    Text(sessions[d].title.removePrefix("Gym "),fontSize=34.sp,lineHeight=39.sp,fontWeight=FontWeight.Bold)
+    Spacer(Modifier.height(10.dp))
+    Text(sessions[d].focus,color=Teal,lineHeight=22.sp)
+    Spacer(Modifier.height(22.dp))
+    Surface(color=Mint,shape=RoundedCornerShape(20.dp)){
+     Text("Press Start once. Voice instructions, sets, side changes and the next exercise follow automatically.",Modifier.padding(18.dp),color=Ink,lineHeight=21.sp)
+    }
+    Spacer(Modifier.height(24.dp))
+    sessions[d].moves.forEachIndexed{i,m->
+     Row(Modifier.fillMaxWidth().padding(vertical=14.dp),verticalAlignment=Alignment.CenterVertically){
+      Text((i+1).toString().padStart(2,'0'),color=Coral,fontSize=23.sp,fontWeight=FontWeight.Bold,modifier=Modifier.width(46.dp))
+      Column(Modifier.weight(1f)){
+       Text(m.name,fontSize=17.sp,fontWeight=FontWeight.SemiBold)
+       Text(m.detail+" · "+m.kind,color=Teal,fontSize=12.sp,modifier=Modifier.padding(top=4.dp))
+      }
+      if(completed[mode+"-"+d+"-"+i]==true)Icon(Icons.Default.Check,"Previously completed",tint=Teal)
+     }
+     HorizontalDivider(color=Mint)
+    }
+   }
+  }
+ }
+}
