@@ -161,6 +161,7 @@ private fun exerciseVideo(move:Move):Int?=when(move.name){
  "March + arm sweep"->R.raw.exercise_march_arm_sweep
  "Band pull-apart"->R.raw.exercise_band_pull_apart
  "One-arm dumbbell row"->R.raw.exercise_one_arm_row
+ "Wall slides"->R.raw.exercise_wall_slide
  else->null
 }
 
@@ -202,6 +203,7 @@ private fun countingDelay(move:Move,count:Int,timed:Boolean,pace:Int):Long=when(
  "March + arm sweep"->if(count==0)1000L else 2000L
  "Band pull-apart"->if(count==0)2500L else 5000L
  "One-arm dumbbell row"->if(count==0)2000L else 5500L
+ "Wall slides"->if(count==0)3000L else 5000L
  else->if(timed)1000L else pace*1000L
 }
 private fun goalFor(move:Move):Int{
