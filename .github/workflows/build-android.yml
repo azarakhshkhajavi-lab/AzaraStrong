@@ -27,6 +27,12 @@ jobs:
       - name: Restore wall-slide exercise video
         run: |
           cat video-assets/exercise_wall_slide.part* | base64 --decode > app/src/main/res/raw/exercise_wall_slide.mp4
+      - name: Restore remaining Day 1 videos
+        run: |
+          cat video-assets/exercise_pallof_press.part* | base64 --decode > app/src/main/res/raw/exercise_pallof_press.mp4
+          cat video-assets/exercise_suitcase_march.part* | base64 --decode > app/src/main/res/raw/exercise_suitcase_march.mp4
+          test "$(sha256sum app/src/main/res/raw/exercise_pallof_press.mp4 | cut -d ' ' -f 1)" = "d5c6c8c9d68522851f33f471c213948be5806deebd7078bf173d9f63db677c16"
+          test "$(sha256sum app/src/main/res/raw/exercise_suitcase_march.mp4 | cut -d ' ' -f 1)" = "f3bfbe6dab8864140ddb366ba1e1cdb011c1b981b0c440a6e51e4d97b2df7bec"
       - name: Install video encoder
         run: |
           sudo apt-get update
