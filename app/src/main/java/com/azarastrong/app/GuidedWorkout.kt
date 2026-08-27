@@ -54,13 +54,17 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
  LaunchedEffect(Unit){while(totalSeconds>0){delay(1000);totalSeconds--}}
  LaunchedEffect(index){count=0;running=true}
  LaunchedEffect(running,index,count,pace){
-  if(running&&count<target){
+  if(running&&count<target&&move.name!="Standing Pallof press"){
    delay(countingDelay(move,count,timed,pace))
    count++
-   if(count>=target){
-    running=false;onMoveComplete(index);delay(900)
-    if(index<session.moves.lastIndex)index++ else onExit()
-   }
+
+  }
+ }
+
+ LaunchedEffect(index,count){
+  if(count>=target){
+   running=false;onMoveComplete(index);delay(900)
+   if(index<session.moves.lastIndex)index++ else onExit()
   }
  }
 
@@ -79,7 +83,7 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
    Text(move.name,fontSize=28.sp,lineHeight=31.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center)
    Text(move.detail,color=Teal,fontWeight=FontWeight.Bold)
    Spacer(Modifier.height(12.dp))
-   ExerciseAnimation(move,running)
+   ExerciseAnimation(move,running){if(move.name=="Standing Pallof press"&&running&&count<target)count++}
    Spacer(Modifier.height(12.dp))
    Text(if(timed)"SECONDS" else "REPETITIONS",color=Color.Gray,fontSize=11.sp,fontWeight=FontWeight.Bold)
    Text(count.toString()+" / "+target,fontSize=44.sp,fontWeight=FontWeight.Black)
@@ -88,7 +92,7 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
    Text("Muscles working",fontWeight=FontWeight.Bold)
    Row(horizontalArrangement=Arrangement.Center){musclesFor(move).forEach{m->Surface(color=Mint,shape=CircleShape,modifier=Modifier.padding(3.dp)){Text(m,Modifier.padding(horizontal=9.dp,vertical=6.dp),color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)}}}
    Card(Modifier.fillMaxWidth().padding(vertical=9.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){Text(move.cue,Modifier.padding(12.dp),textAlign=TextAlign.Center,lineHeight=19.sp)}
-   if(!timed)Row(verticalAlignment=Alignment.CenterVertically){Text("Pace ",fontWeight=FontWeight.Bold);listOf(4 to "Slow",3 to "Normal",2 to "Fast").forEach{v->FilterChip(pace==v.first,{pace=v.first},label={Text(v.second)},modifier=Modifier.padding(start=4.dp))}}
+   if(!timed&&move.name!="Standing Pallof press")Row(verticalAlignment=Alignment.CenterVertically){Text("Pace ",fontWeight=FontWeight.Bold);listOf(4 to "Slow",3 to "Normal",2 to "Fast").forEach{v->FilterChip(pace==v.first,{pace=v.first},label={Text(v.second)},modifier=Modifier.padding(start=4.dp))}}
    Spacer(Modifier.weight(1f))
    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
     OutlinedButton({if(count>0)count--},Modifier.weight(1f)){Icon(Icons.Default.Remove,null);Text(" One")}
@@ -103,7 +107,7 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
 }
 
 @Composable
-private fun ExerciseAnimation(move:Move,running:Boolean){
+private fun ExerciseAnimation(move:Move,running:Boolean,onVideoRep:()->Unit){
  val video=exerciseVideo(move)
  val transition=rememberInfiniteTransition(label="exercise")
  val phase by transition.animateFloat(0f,1f,infiniteRepeatable(tween(if(running)1200 else 100000),RepeatMode.Reverse),label="motion")
@@ -111,7 +115,7 @@ private fun ExerciseAnimation(move:Move,running:Boolean){
  val isTablet=androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp>=600
  Card(Modifier.fillMaxWidth().height(if(isTablet)360.dp else 235.dp),colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(22.dp)){
   if(video!=null){
-   ExerciseVideo(video,running)
+   ExerciseVideo(video,running,onVideoRep)
   }else if(realistic!=null){
    Box(Modifier.fillMaxSize()){
     Image(painterResource(realistic),move.name,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
@@ -125,7 +129,8 @@ private fun ExerciseAnimation(move:Move,running:Boolean){
 }
 
 @Composable
-private fun ExerciseVideo(resourceId:Int,running:Boolean){
+private fun ExerciseVideo(resourceId:Int,running:Boolean,onVideoRep:()->Unit){
+ val onRep by rememberUpdatedState(onVideoRep)
  val context=androidx.compose.ui.platform.LocalContext.current
  var playbackError by remember(resourceId){mutableStateOf(false)}
  val player=remember(resourceId){
@@ -134,6 +139,9 @@ private fun ExerciseVideo(resourceId:Int,running:Boolean){
    repeatMode=Player.REPEAT_MODE_ONE
    volume=0f
    addListener(object:Player.Listener{
+    override fun onMediaItemTransition(mediaItem:MediaItem?,reason:Int){
+     if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)onRep()
+    }
     override fun onPlayerError(error:androidx.media3.common.PlaybackException){playbackError=true}
    })
    prepare()
@@ -162,6 +170,8 @@ private fun exerciseVideo(move:Move):Int?=when(move.name){
  "Band pull-apart"->R.raw.exercise_band_pull_apart
  "One-arm dumbbell row"->R.raw.exercise_one_arm_row
  "Wall slides"->R.raw.exercise_wall_slide
+ "Standing Pallof press"->R.raw.exercise_pallof_press
+ "Suitcase march"->R.raw.exercise_suitcase_march
  else->null
 }
 
