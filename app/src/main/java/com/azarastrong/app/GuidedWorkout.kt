@@ -55,7 +55,7 @@ fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Un
  LaunchedEffect(index){count=0;running=true}
  LaunchedEffect(running,index,count,pace){
   if(running&&count<target){
-   delay(if(timed)1000 else pace*1000L)
+   delay(countingDelay(move,count,timed,pace))
    count++
    if(count>=target){
     running=false;onMoveComplete(index);delay(900)
@@ -108,7 +108,8 @@ private fun ExerciseAnimation(move:Move,running:Boolean){
  val transition=rememberInfiniteTransition(label="exercise")
  val phase by transition.animateFloat(0f,1f,infiniteRepeatable(tween(if(running)1200 else 100000),RepeatMode.Reverse),label="motion")
  val realistic=realisticExerciseImage(move)
- Card(Modifier.fillMaxWidth().height(235.dp),colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(22.dp)){
+ val isTablet=androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp>=600
+ Card(Modifier.fillMaxWidth().height(if(isTablet)360.dp else 235.dp),colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(22.dp)){
   if(video!=null){
    ExerciseVideo(video,running)
   }else if(realistic!=null){
@@ -195,8 +196,14 @@ private fun DrawScope.drawPerson(move:Move,phase:Float){
  if("dumbbell" in n||"curl" in n||"press" in n||"row" in n||"carry" in n){drawCircle(Ink,13f,Offset(c.x-size.width*.18f-wide,c.y));drawCircle(Ink,13f,Offset(c.x+size.width*.18f+wide,c.y))}
 }
 
-private fun isTimed(move:Move)=move.detail.contains("min")||move.detail.contains("sec")
+private fun isTimed(move:Move)=move.name!="March + arm sweep"&&(move.detail.contains("min")||move.detail.contains("sec"))
+private fun countingDelay(move:Move,count:Int,timed:Boolean,pace:Int):Long=when(move.name){
+ "March + arm sweep"->if(count==0)1000L else 2000L
+ "Band pull-apart"->if(count==0)2500L else 5000L
+ else->if(timed)1000L else pace*1000L
+}
 private fun goalFor(move:Move):Int{
+ if(move.name=="March + arm sweep")return 20
  val d=move.detail
  if(d.contains("min"))return(Regex("(\\d+)").find(d)?.value?.toIntOrNull()?:1)*60
  if(d.contains("sec"))return Regex("(\\d+)\\s*sec").find(d)?.groupValues?.get(1)?.toIntOrNull()?:30
