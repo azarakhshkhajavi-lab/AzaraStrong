@@ -1,7 +1,8 @@
 package com.azarastrong.app
 
+import android.content.Context
 import android.speech.tts.TextToSpeech
-import androidx.compose.animation.core.*
+import android.speech.tts.UtteranceProgressListener
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.*
@@ -10,12 +11,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
@@ -24,145 +22,232 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import java.util.Locale
 
+private class VoiceCoach(context:Context){
+ var ready=false
+ private val tts=TextToSpeech(context){ready=it==TextToSpeech.SUCCESS}
+ fun say(text:String,enabled:Boolean){
+  if(ready&&enabled){tts.language=Locale.US;tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"cue")}
+ }
+ suspend fun explain(text:String,enabled:Boolean){
+  if(!enabled)return
+  withTimeoutOrNull(2000){while(!ready)delay(50)}
+  if(!ready)return
+  val finished=CompletableDeferred<Unit>()
+  val id="intro-"+System.nanoTime()
+  tts.setOnUtteranceProgressListener(object:UtteranceProgressListener(){
+   override fun onStart(utteranceId:String?){}
+   override fun onDone(utteranceId:String?){if(utteranceId==id)finished.complete(Unit)}
+   @Deprecated("Platform callback") override fun onError(utteranceId:String?){if(utteranceId==id)finished.complete(Unit)}
+  })
+  tts.language=Locale.US
+  tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,id)
+  withTimeoutOrNull(15000){finished.await()}
+ }
+ fun stop(){tts.stop()}
+ fun close(){tts.stop();tts.shutdown()}
+}
 @Composable
 fun GuidedWorkoutScreen(session:Session,onExit:()->Unit,onMoveComplete:(Int)->Unit){
  val context=androidx.compose.ui.platform.LocalContext.current
- var voiceReady by remember{mutableStateOf(false)}
- var voiceOn by remember{mutableStateOf(true)}
- val voice=remember{TextToSpeech(context){status->voiceReady=status==TextToSpeech.SUCCESS}}
- DisposableEffect(Unit){onDispose{voice.stop();voice.shutdown()}}
- var index by remember{mutableIntStateOf(0)}
+ val view=androidx.compose.ui.platform.LocalView.current
+ val coach=remember{VoiceCoach(context)}
+ val steps=remember(session){workoutSteps(session)}
+ var stepIndex by remember{mutableIntStateOf(0)}
+ var visit by remember{mutableIntStateOf(0)}
  var count by remember{mutableIntStateOf(0)}
- var running by remember{mutableStateOf(true)}
- var pace by remember{mutableIntStateOf(3)}
- var totalSeconds by remember{mutableIntStateOf(1200)}
- val move=session.moves[index]
- val timed=isTimed(move)
- val target=goalFor(move)
-
- LaunchedEffect(voiceReady){if(voiceReady)voice.language=Locale.US}
- LaunchedEffect(index,voiceReady,voiceOn){
-  if(voiceReady&&voiceOn)voice.speak("Next exercise. "+move.name+". "+move.cue,TextToSpeech.QUEUE_FLUSH,null,"exercise")
+ var remaining by remember{mutableIntStateOf(0)}
+ var phase by remember{mutableStateOf("intro")}
+ var paused by remember{mutableStateOf(false)}
+ var voiceOn by remember{mutableStateOf(true)}
+ var prompt by remember{mutableStateOf("Get ready")}
+ var finished by remember{mutableStateOf(false)}
+ val step=steps[stepIndex]
+ val move=session.moves[step.moveIndex]
+ fun goToExercise(index:Int){
+  coach.stop()
+  stepIndex=steps.indexOfFirst{it.moveIndex==index}.coerceAtLeast(0)
+  visit++
  }
- LaunchedEffect(count,voiceReady,voiceOn){
-  if(count>0&&voiceReady&&voiceOn)voice.speak(count.toString(),TextToSpeech.QUEUE_ADD,null,"count")
+ DisposableEffect(coach,view){
+  val previous=view.keepScreenOn;view.keepScreenOn=true
+  onDispose{view.keepScreenOn=previous;coach.close()}
  }
-
- LaunchedEffect(Unit){while(totalSeconds>0){delay(1000);totalSeconds--}}
- LaunchedEffect(index){count=0;running=true}
- LaunchedEffect(running,index,count,pace){
-  if(running&&count<target&&move.name!="Standing Pallof press"){
-   delay(countingDelay(move,count,timed,pace))
-   count++
-
+ val lifecycleOwner=androidx.lifecycle.compose.LocalLifecycleOwner.current
+ DisposableEffect(lifecycleOwner){
+  val observer=androidx.lifecycle.LifecycleEventObserver{_,event->
+   if(event==androidx.lifecycle.Lifecycle.Event.ON_STOP){paused=true;coach.stop()}
+  }
+  lifecycleOwner.lifecycle.addObserver(observer)
+  onDispose{lifecycleOwner.lifecycle.removeObserver(observer)}
+ }
+ androidx.activity.compose.BackHandler{
+  if(step.moveIndex>0)goToExercise(step.moveIndex-1)else onExit()
+ }
+ suspend fun waitUnpaused(){while(paused)delay(100)}
+ suspend fun tick(){
+  var elapsed=0L
+  while(elapsed<1000L){waitUnpaused();delay(50);if(!paused)elapsed+=50}
+ }
+ LaunchedEffect(stepIndex,visit){
+  coach.stop();finished=false;paused=false;phase="intro";count=0;remaining=step.dose.target
+  prompt=move.name
+  val side=if(step.dose.sides==2)". Side "+step.side else ""
+  coach.explain(move.name+". Set "+step.set+" of "+step.dose.sets+side+". "+move.cue,voiceOn)
+  waitUnpaused()
+  phase="ready"
+  for(n in 3 downTo 1){waitUnpaused();prompt=n.toString();coach.say(prompt,voiceOn);tick()}
+  waitUnpaused();coach.say("Start",voiceOn);prompt="Start";phase="active"
+  if(step.dose.timed){
+   while(remaining>0){
+    waitUnpaused()
+    endingCue(remaining)?.let{coach.say(it,voiceOn)}
+    tick();remaining--
+   }
+  }else if(exerciseVideo(move)==null){
+   while(count<step.dose.target){
+    repeat(3){tick()}
+    waitUnpaused();count++;coach.say(count.toString(),voiceOn)
+   }
+  }else{
+   while(count<step.dose.target){delay(50)}
+  }
+  phase="complete";coach.say("Stop",voiceOn);prompt="Well done"
+  val lastForMove=stepIndex==steps.lastIndex||steps[stepIndex+1].moveIndex!=step.moveIndex
+  if(lastForMove)onMoveComplete(step.moveIndex)
+  delay(1500)
+  if(stepIndex<steps.lastIndex){
+   phase="rest"
+   val next=steps[stepIndex+1]
+   coach.explain(if(next.moveIndex==step.moveIndex&&next.side!=step.side)"Switch sides." else "Take a short rest.",voiceOn)
+   repeat(10){prompt="Rest · "+(10-it)+" sec";tick()}
+   stepIndex++
+  }else{
+   finished=true;coach.explain("Workout complete. Well done.",voiceOn)
   }
  }
-
- LaunchedEffect(index,count){
-  if(count>=target){
-   running=false;onMoveComplete(index);delay(900)
-   if(index<session.moves.lastIndex)index++ else onExit()
-  }
- }
-
+ val active=phase=="active"&&!paused&&!finished
  Scaffold(containerColor=Paper,topBar={
-  Row(Modifier.fillMaxWidth().background(Ink).padding(10.dp),verticalAlignment=Alignment.CenterVertically){
-   IconButton(onClick=onExit){Icon(Icons.Default.Close,"Exit",tint=Color.White)}
-   Column(Modifier.weight(1f)){Text(session.title,color=Color.White,fontWeight=FontWeight.Bold);Text("Exercise "+(index+1)+" of "+session.moves.size,color=Color(0xFFD8E2E1),fontSize=12.sp)}
-   IconButton(onClick={voiceOn=!voiceOn}){Icon(if(voiceOn)Icons.Default.VolumeUp else Icons.Default.VolumeOff,"Voice",tint=Color.White)}
-   Text("%02d:%02d".format(totalSeconds/60,totalSeconds%60),color=Color.White,fontWeight=FontWeight.Bold)
+  Row(Modifier.statusBarsPadding().fillMaxWidth().padding(horizontal=12.dp,vertical=8.dp),verticalAlignment=Alignment.CenterVertically){
+   IconButton(onClick={coach.stop();onExit()}){Icon(Icons.Default.Close,"Back to day")}
+   Column(Modifier.weight(1f)){
+    Text(session.title,fontWeight=FontWeight.Bold,fontSize=14.sp)
+    Text("Exercise "+(step.moveIndex+1)+" of "+session.moves.size,color=Teal,fontSize=12.sp)
+   }
+   IconButton(onClick={voiceOn=!voiceOn;if(!voiceOn)coach.stop()}){
+    Icon(if(voiceOn)Icons.Default.VolumeUp else Icons.Default.VolumeOff,if(voiceOn)"Mute voice" else "Enable voice",tint=Teal)
+   }
+  }
+ },bottomBar={
+  Surface(color=Paper,shadowElevation=8.dp){
+   if(finished)Button(onClick=onExit,modifier=Modifier.navigationBarsPadding().padding(18.dp).fillMaxWidth().height(56.dp)){Text("Back to day")}
+   else Row(Modifier.navigationBarsPadding().padding(12.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+    OutlinedButton(onClick={goToExercise(step.moveIndex-1)},enabled=step.moveIndex>0,modifier=Modifier.weight(1f).height(56.dp),contentPadding=PaddingValues(5.dp)){
+     Icon(Icons.Default.SkipPrevious,null,Modifier.size(20.dp));Text("Previous",fontSize=12.sp)
+    }
+    Button(onClick={paused=!paused;if(paused)coach.stop()},modifier=Modifier.weight(1.15f).height(56.dp),contentPadding=PaddingValues(5.dp)){
+     Icon(if(paused)Icons.Default.PlayArrow else Icons.Default.Pause,null,Modifier.size(20.dp));Text(if(paused)"Resume" else "Pause",fontSize=13.sp)
+    }
+    OutlinedButton(onClick={
+     if(step.moveIndex<session.moves.lastIndex)goToExercise(step.moveIndex+1)else onExit()
+    },modifier=Modifier.weight(1f).height(56.dp),contentPadding=PaddingValues(5.dp)){
+     Text(if(step.moveIndex==session.moves.lastIndex)"Exit" else "Next",fontSize=12.sp);Icon(Icons.Default.SkipNext,null,Modifier.size(20.dp))
+    }
+   }
   }
  }){padding->
-  Column(Modifier.fillMaxSize().padding(padding).padding(16.dp),horizontalAlignment=Alignment.CenterHorizontally){
-   LinearProgressIndicator(progress={(index+count.toFloat()/target)/session.moves.size},modifier=Modifier.fillMaxWidth(),color=Coral)
-   Spacer(Modifier.height(12.dp))
-   Text(move.kind.uppercase(),color=Coral,fontSize=11.sp,fontWeight=FontWeight.Bold,letterSpacing=1.4.sp)
-   Text(move.name,fontSize=28.sp,lineHeight=31.sp,fontWeight=FontWeight.Black,textAlign=TextAlign.Center)
-   Text(move.detail,color=Teal,fontWeight=FontWeight.Bold)
-   Spacer(Modifier.height(12.dp))
-   ExerciseAnimation(move,running){if(move.name=="Standing Pallof press"&&running&&count<target)count++}
-   Spacer(Modifier.height(12.dp))
-   Text(if(timed)"SECONDS" else "REPETITIONS",color=Color.Gray,fontSize=11.sp,fontWeight=FontWeight.Bold)
-   Text(count.toString()+" / "+target,fontSize=44.sp,fontWeight=FontWeight.Black)
-   LinearProgressIndicator(progress={count.toFloat()/target},modifier=Modifier.fillMaxWidth().height(8.dp),color=Teal)
-   Spacer(Modifier.height(10.dp))
-   Text("Muscles working",fontWeight=FontWeight.Bold)
-   Row(horizontalArrangement=Arrangement.Center){musclesFor(move).forEach{m->Surface(color=Mint,shape=CircleShape,modifier=Modifier.padding(3.dp)){Text(m,Modifier.padding(horizontal=9.dp,vertical=6.dp),color=Teal,fontSize=11.sp,fontWeight=FontWeight.Bold)}}}
-   Card(Modifier.fillMaxWidth().padding(vertical=9.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){Text(move.cue,Modifier.padding(12.dp),textAlign=TextAlign.Center,lineHeight=19.sp)}
-   if(!timed&&move.name!="Standing Pallof press")Row(verticalAlignment=Alignment.CenterVertically){Text("Pace ",fontWeight=FontWeight.Bold);listOf(4 to "Slow",3 to "Normal",2 to "Fast").forEach{v->FilterChip(pace==v.first,{pace=v.first},label={Text(v.second)},modifier=Modifier.padding(start=4.dp))}}
-   Spacer(Modifier.weight(1f))
-   Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
-    OutlinedButton({if(count>0)count--},Modifier.weight(1f)){Icon(Icons.Default.Remove,null);Text(" One")}
-    Button({running=!running},Modifier.weight(1.2f)){Icon(if(running)Icons.Default.Pause else Icons.Default.PlayArrow,null);Text(if(running)" Pause" else " Continue")}
-    OutlinedButton({if(count<target)count++},Modifier.weight(1f)){Icon(Icons.Default.Add,null);Text(" One")}
+  Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally){
+   LinearProgressIndicator(progress={stepIndex.toFloat()/steps.size},modifier=Modifier.fillMaxWidth(),color=Teal,trackColor=Mint)
+   Spacer(Modifier.height(20.dp))
+   Text(move.kind.uppercase(),color=Teal,fontSize=11.sp,letterSpacing=2.sp,fontWeight=FontWeight.Bold)
+   Text(move.name,fontSize=29.sp,lineHeight=34.sp,fontWeight=FontWeight.Bold,textAlign=TextAlign.Center)
+   Spacer(Modifier.height(8.dp))
+   Text("Set "+step.set+" / "+step.dose.sets+(if(step.dose.sides==2)"  ·  Side "+step.side+" / 2" else ""),color=Teal)
+   Spacer(Modifier.height(18.dp))
+   key(visit,stepIndex){
+    Box(Modifier.fillMaxWidth().aspectRatio(16f/9f).background(Mint,RoundedCornerShape(20.dp))){
+     val video=exerciseVideo(move)
+     if(video!=null)ExerciseVideo(video,active){position->
+      if(active&&!step.dose.timed&&count<step.dose.target){
+       count++;coach.say(count.toString(),voiceOn)
+      }
+     }
+     else{
+      val still=realisticExerciseImage(move)
+      if(still!=null)Image(painterResource(still),move.name,Modifier.fillMaxSize(),contentScale=ContentScale.Fit)
+      else Column(Modifier.align(Alignment.Center),horizontalAlignment=Alignment.CenterHorizontally){
+       Icon(Icons.Default.FitnessCenter,null,tint=Teal,modifier=Modifier.size(48.dp))
+       Text("Follow the spoken form cue",Modifier.padding(top=12.dp),color=Ink)
+       Text("Video not yet available",color=Teal,fontSize=12.sp)
+      }
+     }
+    }
    }
-   Button(onClick={onMoveComplete(index);if(index<session.moves.lastIndex)index++ else onExit()},colors=ButtonDefaults.buttonColors(containerColor=Ink),modifier=Modifier.fillMaxWidth().padding(top=7.dp)){
-    Text(if(index==session.moves.lastIndex)"Finish workout" else "Next exercise");Icon(Icons.Default.ArrowForward,null)
+   Spacer(Modifier.height(22.dp))
+   val headline=when{
+    finished->"Workout complete"
+    paused->"Paused"
+    phase=="active"&&step.dose.timed->"%02d:%02d".format(remaining/60,remaining%60)
+    phase=="active"->count.toString()+" / "+step.dose.target
+    else->prompt
    }
+   Text(headline,fontSize=if(phase=="active"||phase=="ready")46.sp else 26.sp,fontWeight=FontWeight.Bold,textAlign=TextAlign.Center)
+   if(phase=="active")Text(if(step.dose.timed)"SECONDS REMAINING" else "REPETITIONS",fontSize=11.sp,letterSpacing=1.sp,color=Teal)
+   Spacer(Modifier.height(18.dp))
+   Surface(color=Color.White,shape=RoundedCornerShape(20.dp),modifier=Modifier.fillMaxWidth()){
+    Column(Modifier.padding(18.dp)){
+     Text("FORM FOCUS",fontSize=10.sp,letterSpacing=2.sp,color=Teal,fontWeight=FontWeight.Bold)
+     Text(move.cue,Modifier.padding(top=8.dp),fontSize=16.sp,lineHeight=23.sp)
+     Text("Muscles · "+musclesFor(move).joinToString(" · "),Modifier.padding(top=12.dp),fontSize=12.sp,color=Teal)
+    }
+   }
+   Spacer(Modifier.height(12.dp))
+   Text("Move within a comfortable range. Stop if you feel pain.",fontSize=11.sp,color=Teal,textAlign=TextAlign.Center)
   }
  }
 }
-
 @Composable
-private fun ExerciseAnimation(move:Move,running:Boolean,onVideoRep:()->Unit){
- val video=exerciseVideo(move)
- val transition=rememberInfiniteTransition(label="exercise")
- val phase by transition.animateFloat(0f,1f,infiniteRepeatable(tween(if(running)1200 else 100000),RepeatMode.Reverse),label="motion")
- val realistic=realisticExerciseImage(move)
- val isTablet=androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp>=600
- Card(Modifier.fillMaxWidth().height(if(isTablet)360.dp else 235.dp),colors=CardDefaults.cardColors(containerColor=Mint),shape=RoundedCornerShape(22.dp)){
-  if(video!=null){
-   ExerciseVideo(video,running,onVideoRep)
-  }else if(realistic!=null){
-   Box(Modifier.fillMaxSize()){
-    Image(painterResource(realistic),move.name,Modifier.fillMaxSize(),contentScale=ContentScale.Crop)
-    Row(Modifier.align(Alignment.BottomCenter).padding(9.dp),horizontalArrangement=Arrangement.spacedBy(10.dp)){
-     MotionLabel("START",phase<.5f)
-     MotionLabel("FINISH",phase>=.5f)
-    }
-   }
-  }else Canvas(Modifier.fillMaxSize().padding(16.dp)){drawPerson(move,phase)}
- }
-}
-
-@Composable
-private fun ExerciseVideo(resourceId:Int,running:Boolean,onVideoRep:()->Unit){
- val onRep by rememberUpdatedState(onVideoRep)
+private fun ExerciseVideo(resourceId:Int,running:Boolean,onRep:(Long)->Unit){
  val context=androidx.compose.ui.platform.LocalContext.current
- var playbackError by remember(resourceId){mutableStateOf(false)}
+ val currentRep by rememberUpdatedState(onRep)
+ var error by remember{mutableStateOf(false)}
  val player=remember(resourceId){
   ExoPlayer.Builder(context).build().apply{
-   setMediaItem(MediaItem.fromUri("android.resource://${context.packageName}/$resourceId"))
-   repeatMode=Player.REPEAT_MODE_ONE
-   volume=0f
+   setMediaItem(MediaItem.fromUri("android.resource://"+context.packageName+"/"+resourceId))
+   repeatMode=Player.REPEAT_MODE_ONE;volume=0f
    addListener(object:Player.Listener{
-    override fun onMediaItemTransition(mediaItem:MediaItem?,reason:Int){
-     if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)onRep()
-    }
-    override fun onPlayerError(error:androidx.media3.common.PlaybackException){playbackError=true}
+    override fun onPlayerError(e:androidx.media3.common.PlaybackException){error=true}
    })
    prepare()
   }
  }
- LaunchedEffect(running,player){player.playWhenReady=running}
- if(playbackError){
-  Box(Modifier.fillMaxSize().background(Mint),contentAlignment=Alignment.Center){
-   Text("Video could not play",color=Ink,fontWeight=FontWeight.Bold)
+ LaunchedEffect(player,running){player.playWhenReady=running}
+ LaunchedEffect(player){
+  var previous=-1L
+  val markers=when(resourceId){
+   R.raw.exercise_band_pull_apart->listOf(4000L,9000L)
+   R.raw.exercise_one_arm_row->listOf(3000L,8500L)
+   R.raw.exercise_wall_slide->listOf(4700L,9300L)
+   R.raw.exercise_pallof_press->listOf(3300L)
+   else->emptyList()
   }
- }else AndroidView(
-  factory={ctx->
-   (android.view.LayoutInflater.from(ctx).inflate(R.layout.exercise_player,null,false) as PlayerView).apply{
-    useController=false
-    this.player=player
+  while(true){
+   if(player.isPlaying){
+    val now=player.currentPosition
+    if(now<previous)previous=-1L
+    markers.filter{it>previous&&it<=now}.forEach{currentRep(it)}
+    previous=now
    }
-  },
-  modifier=Modifier.fillMaxSize(),
-  update={it.player=player}
- )
+   delay(40)
+  }
+ }
  DisposableEffect(player){onDispose{player.release()}}
+ if(error)Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text("Video unavailable. Follow the form cue.",textAlign=TextAlign.Center)}
+ else AndroidView(factory={ctx->
+  (android.view.LayoutInflater.from(ctx).inflate(R.layout.exercise_player,null,false) as PlayerView).apply{useController=false;this.player=player}
+ },update={it.player=player},modifier=Modifier.fillMaxSize())
 }
 
 private fun exerciseVideo(move:Move):Int?=when(move.name){
@@ -175,11 +260,6 @@ private fun exerciseVideo(move:Move):Int?=when(move.name){
  else->null
 }
 
-@Composable private fun MotionLabel(text:String,active:Boolean){
- Surface(color=if(active)Coral else Ink.copy(alpha=.70f),shape=CircleShape){
-  Text(text,Modifier.padding(horizontal=13.dp,vertical=6.dp),color=Color.White,fontSize=11.sp,fontWeight=FontWeight.Black)
- }
-}
 
 private fun realisticExerciseImage(move:Move):Int?=when(move.name){
  "March + arm sweep"->R.drawable.exercise_march_arm_sweep
@@ -191,38 +271,7 @@ private fun realisticExerciseImage(move:Move):Int?=when(move.name){
  else->null
 }
 
-private fun DrawScope.drawPerson(move:Move,phase:Float){
- val n=move.name.lowercase()
- val squat=if("squat" in n||"deadlift" in n)phase*35f else 0f
- val step=if("march" in n||"step" in n||"carry" in n)phase*25f else 0f
- val wide=if(move.kind in listOf("Posture","Back","Shoulders","Chest","Arms"))phase*48f else phase*10f
- val c=Offset(size.width/2,size.height*.43f+squat)
- val stroke=size.width*.035f
- drawCircle(Color(0xFFE3A686),size.width*.065f,Offset(c.x,c.y-size.height*.24f))
- drawLine(Teal,Offset(c.x,c.y-size.height*.16f),Offset(c.x,c.y+size.height*.1f),stroke,StrokeCap.Round)
- drawLine(Coral,Offset(c.x,c.y-size.height*.12f),Offset(c.x-size.width*.18f-wide,c.y),stroke*.7f,StrokeCap.Round)
- drawLine(Coral,Offset(c.x,c.y-size.height*.12f),Offset(c.x+size.width*.18f+wide,c.y),stroke*.7f,StrokeCap.Round)
- drawLine(Ink,Offset(c.x,c.y+size.height*.08f),Offset(c.x-size.width*.12f,c.y+size.height*.32f-step),stroke*.78f,StrokeCap.Round)
- drawLine(Ink,Offset(c.x,c.y+size.height*.08f),Offset(c.x+size.width*.12f,c.y+size.height*.32f+step),stroke*.78f,StrokeCap.Round)
- if("band" in n||"pallof" in n||"pull" in n)drawLine(Coral,Offset(c.x-size.width*.25f-wide,c.y),Offset(c.x+size.width*.25f+wide,c.y),7f,StrokeCap.Round)
- if("dumbbell" in n||"curl" in n||"press" in n||"row" in n||"carry" in n){drawCircle(Ink,13f,Offset(c.x-size.width*.18f-wide,c.y));drawCircle(Ink,13f,Offset(c.x+size.width*.18f+wide,c.y))}
-}
 
-private fun isTimed(move:Move)=move.name!="March + arm sweep"&&(move.detail.contains("min")||move.detail.contains("sec"))
-private fun countingDelay(move:Move,count:Int,timed:Boolean,pace:Int):Long=when(move.name){
- "March + arm sweep"->if(count==0)1000L else 2000L
- "Band pull-apart"->if(count==0)2500L else 5000L
- "One-arm dumbbell row"->if(count==0)2000L else 5500L
- "Wall slides"->if(count==0)3000L else 5000L
- else->if(timed)1000L else pace*1000L
-}
-private fun goalFor(move:Move):Int{
- if(move.name=="March + arm sweep")return 20
- val d=move.detail
- if(d.contains("min"))return(Regex("(\\d+)").find(d)?.value?.toIntOrNull()?:1)*60
- if(d.contains("sec"))return Regex("(\\d+)\\s*sec").find(d)?.groupValues?.get(1)?.toIntOrNull()?:30
- return Regex("×\\s*(\\d+)").find(d)?.groupValues?.get(1)?.toIntOrNull()?:Regex("(\\d+)").find(d)?.value?.toIntOrNull()?:10
-}
 private fun musclesFor(move:Move):List<String>{
  val n=move.name.lowercase()
  return when{
@@ -235,3 +284,4 @@ private fun musclesFor(move:Move):List<String>{
   else->listOf("Heart","Core","Legs")
  }
 }
+
