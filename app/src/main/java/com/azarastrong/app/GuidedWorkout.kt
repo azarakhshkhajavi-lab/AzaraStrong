@@ -1,8 +1,6 @@
 package com.azarastrong.app
 
-import android.net.Uri
 import android.speech.tts.TextToSpeech
-import android.widget.VideoView
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -22,6 +20,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 import java.util.Locale
 
@@ -124,25 +126,34 @@ private fun ExerciseAnimation(move:Move,running:Boolean){
 @Composable
 private fun ExerciseVideo(resourceId:Int,running:Boolean){
  val context=androidx.compose.ui.platform.LocalContext.current
- val shouldRun by rememberUpdatedState(running)
- val videoView=remember(resourceId){
-  VideoView(context).apply{
-   setBackgroundColor(android.graphics.Color.BLACK)
-   setVideoURI(Uri.parse("android.resource://${context.packageName}/$resourceId"))
-   setOnPreparedListener{player->
-    player.isLooping=true
-    player.setVolume(0f,0f)
-    if(shouldRun)start()
-   }
-   setOnCompletionListener{if(shouldRun)start()}
+ var playbackError by remember(resourceId){mutableStateOf(false)}
+ val player=remember(resourceId){
+  ExoPlayer.Builder(context).build().apply{
+   setMediaItem(MediaItem.fromUri("android.resource://${context.packageName}/$resourceId"))
+   repeatMode=Player.REPEAT_MODE_ONE
+   volume=0f
+   addListener(object:Player.Listener{
+    override fun onPlayerError(error:androidx.media3.common.PlaybackException){playbackError=true}
+   })
+   prepare()
   }
  }
- AndroidView(
-  factory={videoView},
+ LaunchedEffect(running,player){player.playWhenReady=running}
+ if(playbackError){
+  Box(Modifier.fillMaxSize().background(Mint),contentAlignment=Alignment.Center){
+   Text("Video could not play",color=Ink,fontWeight=FontWeight.Bold)
+  }
+ }else AndroidView(
+  factory={ctx->
+   (android.view.LayoutInflater.from(ctx).inflate(R.layout.exercise_player,null,false) as PlayerView).apply{
+    useController=false
+    this.player=player
+   }
+  },
   modifier=Modifier.fillMaxSize(),
-  update={view->if(running){if(!view.isPlaying)view.start()}else if(view.isPlaying)view.pause()}
+  update={it.player=player}
  )
- DisposableEffect(videoView){onDispose{videoView.stopPlayback()}}
+ DisposableEffect(player){onDispose{player.release()}}
 }
 
 private fun exerciseVideo(move:Move):Int?=when(move.name){
